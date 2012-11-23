@@ -2,7 +2,7 @@
 import Control.Applicative ((<$>))
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
-import Control.Monad (when, guard, forever, filterM, void)
+import Control.Monad (when, unless, guard, forever, filterM, void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Data.IORef
@@ -76,6 +76,8 @@ main = do
     (x:xs) -> do
       hPutStrLn stderr $ "Warning: Using " ++ show x ++ " and not: " ++ show xs
       return x
+  exists <- doesFileExist exec
+  unless exists . fail $ exec ++ " does not exist!"
   (Nothing, Just hOut, Just hErr, procHandle) <- createProcess CreateProcess
     { cmdspec = RawCommand exec args 
     , cwd = Nothing
