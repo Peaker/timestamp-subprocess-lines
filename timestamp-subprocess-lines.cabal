@@ -15,8 +15,11 @@ copyright:           Eyal Lotem (2012)
 category:            Scripting
 build-type:          Simple
 cabal-version:       >=1.10
-
 extra-source-files:  Test_writer.hs
+
+source-repository    head
+  type:              git
+  location:          https://github.com/Peaker/timestamp-subprocess-lines
 
 executable Timestamp
   main-is:             Timestamp.hs
