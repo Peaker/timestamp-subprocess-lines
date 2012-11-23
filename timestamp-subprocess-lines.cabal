@@ -4,7 +4,8 @@
 name:                timestamp-subprocess-lines
 version:             0.1.0.1
 synopsis:            Run a command and timestamp its stdout/stderr lines
--- description:         
+description:         A small utility that allows executing other commands
+                     and prefix each line with a timestamp.
 homepage:            https://github.com/Peaker/timestamp-subprocess-lines
 license:             BSD3
 license-file:        LICENSE
