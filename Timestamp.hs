@@ -1,41 +1,57 @@
+{-# OPTIONS -Wall -O2 #-}
 -- Must compile with -threaded
 import Control.Applicative ((<$>))
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
-import Control.Monad (when, unless, guard, forever, filterM, void)
+import Control.Monad (forever, filterM, void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Data.IORef
 import Data.List (nub, isInfixOf)
 import Data.List.Split (splitOn)
-import Data.Time (getCurrentTime, formatTime, diffUTCTime)
+import Data.Monoid (mconcat)
+import Data.Time (getCurrentTime, FormatTime, formatTime, diffUTCTime)
 import System.Directory (doesFileExist)
 import System.Environment (getArgs, getEnv)
-import System.Exit (exitWith)
+import System.Exit (exitWith, ExitCode(..))
 import System.FilePath ((</>))
-import System.IO (hPutStrLn, stdout, stderr, hSetBuffering, BufferMode(..))
+import System.IO (Handle, hPutStrLn, stdout, stderr, hSetBuffering, BufferMode(..))
 import System.IO.Error (isEOFError)
 import System.Locale (defaultTimeLocale)
 import System.Process (createProcess, waitForProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 import qualified Control.Exception as E
 import qualified Data.ByteString.Char8 as BS8
 
+showTime :: FormatTime t => t -> String
 showTime time = fmt "%H:%M:%S." time ++ millis
   where
     fmt = formatTime defaultTimeLocale
     millis = take 3 $ fmt "%q" time
 
+searchPath :: String -> IO [FilePath]
 searchPath cmd = do
   paths <- nub . splitOn ":" <$> getEnv "PATH"
-  filterM doesFileExist $ map (</> cmd) paths
+  return $ map (</> cmd) paths
 
-toExec cmd
-  | "/" `isInfixOf` cmd = return [cmd]
-  | otherwise = searchPath cmd
+toExec :: String -> IO FilePath
+toExec cmd = do
+  paths <- getPaths
+  existingPaths <- filterM doesFileExist paths
+  case existingPaths of
+    [] -> fail $ "Cannot find " ++ show cmd
+    [x] -> return x
+    (x:xs) -> do
+      hPutStrLn stderr $ "Warning: Using " ++ show x ++ " and not: " ++ show xs
+      return x
+  where
+    getPaths
+      | "/" `isInfixOf` cmd = return [cmd]
+      | otherwise = searchPath cmd
 
+timestamp :: IO String -> Handle -> Handle -> IO (IO ())
 timestamp getTimeStr outH inH = do
   closedVar <- newEmptyMVar
-  forkIO $ lineLoop `E.finally` putMVar closedVar ()
+  _ <- forkIO $ lineLoop `E.finally` putMVar closedVar ()
   return $ takeMVar closedVar
   where
     justEofs err
@@ -49,34 +65,35 @@ timestamp getTimeStr outH inH = do
       time <- BS8.pack <$> lift getTimeStr
       lift . BS8.hPutStrLn outH $ BS8.unwords [time, line]
 
-mkGetTimeDelta = do
+mkGetTimeStr :: Bool -> IO (IO String)
+mkGetTimeStr delta = do
   curRef <- newIORef =<< getCurrentTime
   return $ do
     old <- readIORef curRef
     new <- getCurrentTime
     writeIORef curRef new
-    return (new `diffUTCTime` old)
+    return $
+      if delta
+      then '+' : show (new `diffUTCTime` old)
+      else showTime new
 
-main = do
-  rawArgs <- getArgs
-  (delta, cmd, args) <- case rawArgs of
-    "-delta" : cmd : args -> return (True, cmd, args)
-    cmd : args -> return (False, cmd, args)
-    _ -> fail "Usage: Timestamp [-delta] cmd [args...]"
-  getTimeDelta <- mkGetTimeDelta
-  let
-    getTimeStr
-      | delta = ('+' :) . show <$> getTimeDelta
-      | otherwise = showTime <$> getCurrentTime
-  execs <- toExec cmd
-  exec <- case execs of
-    [] -> fail $ "Cannot find " ++ show cmd ++ " in path"
-    [x] -> return x
-    (x:xs) -> do
-      hPutStrLn stderr $ "Warning: Using " ++ show x ++ " and not: " ++ show xs
-      return x
-  exists <- doesFileExist exec
-  unless exists . fail $ exec ++ " does not exist!"
+unescape :: String -> String
+unescape ('\\':'\\':xs) = '\\':unescape xs
+unescape ('\\':'-':xs) = '-':unescape xs
+unescape (x:xs) = x:unescape xs
+unescape "" = ""
+
+parseCmds :: [String] -> [[String]]
+parseCmds = (map . map) unescape . splitOn ["--"]
+
+parseCmdLine :: [String] -> (Bool, [[String]])
+parseCmdLine ("delta" : args) = (True, parseCmds args)
+parseCmdLine args = (False, parseCmds args)
+
+runCmd :: IO String -> [String] -> IO ([IO ExitCode], [IO ()])
+runCmd _ [] = fail "Empty cmdline is invalid"
+runCmd getTimeStr (cmd:args) = do
+  exec <- toExec cmd
   (Nothing, Just hOut, Just hErr, procHandle) <- createProcess CreateProcess
     { cmdspec = RawCommand exec args
     , cwd = Nothing
@@ -87,12 +104,28 @@ main = do
     , close_fds = False
     , create_group = False
     }
-  mapM_ (`hSetBuffering` LineBuffering) [ stdout, stderr, hOut, hErr ]
-  closes <-
+  mapM_ (`hSetBuffering` LineBuffering) $ [ hOut, hErr ]
+  pipeWaiters <-
     sequence
     [ timestamp getTimeStr stdout hOut
     , timestamp getTimeStr stderr hErr
     ]
-  exitCode <- waitForProcess procHandle
-  sequence_ closes
-  exitWith exitCode
+  return
+    ( [ waitForProcess procHandle ]
+    , pipeWaiters
+    )
+
+-- "Usage: Timestamp [-delta] {cmdline...} [-- cmdline... [-- cmdline...]...]"
+main :: IO ()
+main = do
+  (delta, cmds) <- parseCmdLine <$> getArgs
+  getTimeStr <- mkGetTimeStr delta
+  mapM_ (`hSetBuffering` LineBuffering) $ [ stdout, stderr ]
+  (processWaiters, pipeWaiters) <- mconcat <$> mapM (runCmd getTimeStr) cmds
+  exitCodes <- sequence processWaiters
+  sequence_ pipeWaiters
+  exitWith (foldr combineExitCodes ExitSuccess exitCodes)
+  where
+    -- Return the first error:
+    combineExitCodes (ExitFailure x) _ = ExitFailure x
+    combineExitCodes ExitSuccess other = other
