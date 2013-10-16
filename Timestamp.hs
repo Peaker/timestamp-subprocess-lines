@@ -3,19 +3,17 @@
 import Control.Applicative ((<$>))
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
-import Control.Monad (forever, filterM, void)
+import Control.Monad (forever, void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Data.IORef
-import Data.List (nub, isInfixOf)
+import Data.List (intercalate)
 import Data.List.Split (splitOn)
 import Data.Monoid (mconcat)
 import Data.Time (getCurrentTime, FormatTime, formatTime, diffUTCTime)
-import System.Directory (doesFileExist)
-import System.Environment (getArgs, getEnv)
+import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(..))
-import System.FilePath ((</>))
-import System.IO (Handle, hPutStrLn, stdout, stderr, hSetBuffering, BufferMode(..))
+import System.IO (Handle, stdout, stderr, hSetBuffering, BufferMode(..))
 import System.IO.Error (isEOFError)
 import System.Locale (defaultTimeLocale)
 import System.Process (createProcess, waitForProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
@@ -27,26 +25,6 @@ showTime time = fmt "%H:%M:%S." time ++ millis
   where
     fmt = formatTime defaultTimeLocale
     millis = take 3 $ fmt "%q" time
-
-searchPath :: String -> IO [FilePath]
-searchPath cmd = do
-  paths <- nub . splitOn ":" <$> getEnv "PATH"
-  return $ map (</> cmd) paths
-
-toExec :: String -> IO FilePath
-toExec cmd = do
-  paths <- getPaths
-  existingPaths <- filterM doesFileExist paths
-  case existingPaths of
-    [] -> fail $ "Cannot find " ++ show cmd
-    [x] -> return x
-    (x:xs) -> do
-      hPutStrLn stderr $ "Warning: Using " ++ show x ++ " and not: " ++ show xs
-      return x
-  where
-    getPaths
-      | "/" `isInfixOf` cmd = return [cmd]
-      | otherwise = searchPath cmd
 
 timestamp :: IO String -> Handle -> Handle -> IO (IO ())
 timestamp getTimeStr outH inH = do
@@ -92,10 +70,9 @@ parseCmdLine args = (False, parseCmds args)
 
 runCmd :: IO String -> [String] -> IO ([IO ExitCode], [IO ()])
 runCmd _ [] = fail "Empty cmdline is invalid"
-runCmd getTimeStr (cmd:args) = do
-  exec <- toExec cmd
+runCmd getTimeStr cmd = do
   (Nothing, Just hOut, Just hErr, procHandle) <- createProcess CreateProcess
-    { cmdspec = RawCommand exec args
+    { cmdspec = ShellCommand $ intercalate " " cmd
     , cwd = Nothing
     , env = Nothing
     , std_in = Inherit
