@@ -18,8 +18,7 @@ import System.IO.Error (isEOFError)
 import System.Locale (defaultTimeLocale)
 import System.Process (createProcess, waitForProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 import qualified Control.Exception as E
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text.IO
+import qualified Data.ByteString.Char8 as BS8
 
 showTime time = fmt "%H:%M:%S." time ++ millis
   where
@@ -45,10 +44,10 @@ timestamp getTimeStr outH inH = do
     catchEofs act f = E.catchJust justEofs act $ const f
     lineLoop = void . runMaybeT . forever $ do
       line <- MaybeT $
-              (Just <$> Text.IO.hGetLine inH)
+              (Just <$> BS8.hGetLine inH)
               `catchEofs` return Nothing
-      time <- Text.pack <$> lift getTimeStr
-      lift . Text.IO.hPutStrLn outH $ Text.unwords [time, line]
+      time <- BS8.pack <$> lift getTimeStr
+      lift . BS8.hPutStrLn outH $ BS8.unwords [time, line]
 
 mkGetTimeDelta = do
   curRef <- newIORef =<< getCurrentTime
@@ -79,7 +78,7 @@ main = do
   exists <- doesFileExist exec
   unless exists . fail $ exec ++ " does not exist!"
   (Nothing, Just hOut, Just hErr, procHandle) <- createProcess CreateProcess
-    { cmdspec = RawCommand exec args 
+    { cmdspec = RawCommand exec args
     , cwd = Nothing
     , env = Nothing
     , std_in = Inherit
