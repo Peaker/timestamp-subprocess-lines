@@ -2,7 +2,7 @@
 -- further documentation, see http://haskell.org/cabal/users-guide/
 
 name:                timestamp-subprocess-lines
-version:             0.1.0.1
+version:             0.1.0.2
 synopsis:            Run a command and timestamp its stdout/stderr lines
 description:         A small utility that allows executing other commands
                      and prefix each line with a timestamp.
