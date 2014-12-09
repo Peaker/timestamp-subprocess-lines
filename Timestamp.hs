@@ -80,6 +80,7 @@ runCmd getTimeStr cmd = do
     , std_err = CreatePipe
     , close_fds = False
     , create_group = False
+    , delegate_ctlc = True
     }
   mapM_ (`hSetBuffering` LineBuffering) $ [ hOut, hErr ]
   pipeWaiters <-
