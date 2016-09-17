@@ -1,24 +1,25 @@
 {-# OPTIONS -Wall -O2 #-}
 -- Must compile with -threaded
-import Control.Applicative ((<$>))
-import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar
-import Control.Monad (forever, void)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Maybe (MaybeT(..))
-import Data.IORef
-import Data.List (intercalate)
-import Data.List.Split (splitOn)
-import Data.Monoid (mconcat)
-import Data.Time (getCurrentTime, FormatTime, formatTime, diffUTCTime)
-import System.Environment (getArgs)
-import System.Exit (exitWith, ExitCode(..))
-import System.IO (Handle, stdout, stderr, hSetBuffering, BufferMode(..))
-import System.IO.Error (isEOFError)
-import System.Locale (defaultTimeLocale)
-import System.Process (createProcess, waitForProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
+import           Control.Applicative ((<$>))
+import           Control.Concurrent (forkIO)
+import           Control.Concurrent.MVar
+import           Control.Monad (forever, void)
+import           Control.Monad.Trans.Class (lift)
+import           Control.Monad.Trans.Maybe (MaybeT(..))
+import           Data.IORef
+import           Data.List (intercalate)
+import           Data.List.Split (splitOn)
+import           Data.Monoid (mconcat)
+import           Data.Time.Clock (getCurrentTime, diffUTCTime)
+import           Data.Time.Format (FormatTime, formatTime, defaultTimeLocale)
+import           System.Environment (getArgs)
+import           System.Exit (exitWith, ExitCode(..))
+import           System.IO (Handle, stdout, stderr, hSetBuffering, BufferMode(..))
+import           System.IO.Error (isEOFError)
+import           System.Process (createProcess, waitForProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 import qualified Control.Exception as E
 import qualified Data.ByteString.Char8 as BS8
+import           Prelude hiding (mconcat, (<$>))
 
 showTime :: FormatTime t => t -> String
 showTime time = fmt "%H:%M:%S." time ++ millis
